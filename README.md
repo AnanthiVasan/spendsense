@@ -1,18 +1,46 @@
 # Spendsense
 
-Personal spending app: Next.js App Router, Postgres + pgvector, and mock fallbacks for Plaid, Gemini, and Stripe.
+Personal finance copilot: bank transactions explained in plain language, anomaly alerts, a 30-day cash-flow forecast, savings ideas, a monthly health report, and Stripe free/Pro gating.
+
+**Live demo (MOCK mode):** https://spendsense-sigma-one.vercel.app  
+**Demo login:** `demo@spendsense.dev` / `demo-pass-123`  
+**GitHub:** https://github.com/AnanthiVasan/spendsense
+
+Capstone project for Impacteers Track 1 (FinTech). Stack substitutions from the brief: Next.js 15 App Router, Neon Postgres + pgvector, Gemini (`gemini-1.5-flash`, `text-embedding-004`) with deterministic mocks when keys are empty. Redis is not required.
+
+## Architecture (short)
+
+Browser → Next.js App Router → Auth.js session → Neon Postgres/pgvector. Plaid, Gemini, and Stripe are optional; empty keys use mock paths. Heavy work runs in `npm run seed` so request handlers stay short.
+
+Full write-up: [docs/architecture.md](docs/architecture.md).
+
+## Capstone deliverables
+
+| Artefact | Location |
+| --- | --- |
+| Architecture (data flow, components, decisions) | [docs/architecture.md](docs/architecture.md) |
+| RAG pipeline | [docs/rag-pipeline.md](docs/rag-pipeline.md) |
+| pgvector schema + search notes | [docs/schema.md](docs/schema.md) |
+| Categorisation accuracy + confusion matrices | [docs/categorization-accuracy.md](docs/categorization-accuracy.md) |
+| Stripe webhook lifecycle | [docs/stripe-webhooks.md](docs/stripe-webhooks.md) |
+| Prompt engineering notes | [docs/prompt-engineering.md](docs/prompt-engineering.md) |
+| AI usage log (Cursor) | [docs/ai-usage-log.md](docs/ai-usage-log.md) |
+| Written reflection | [docs/reflection.md](docs/reflection.md) |
+| Demo shot list (record 5–10 min video from this) | [docs/demo-script.md](docs/demo-script.md) |
+| Reviewer local setup | [docs/local-setup.md](docs/local-setup.md) |
+| Overview slides | [docs/Spendsense-overview.pptx](docs/Spendsense-overview.pptx) |
 
 ## Run locally (MOCK mode)
 
-Step-by-step for reviewers: [docs/local-setup.md](docs/local-setup.md).
+Step-by-step: [docs/local-setup.md](docs/local-setup.md).
 
-Plaid, Gemini, and Stripe stay mocked when their keys are empty. The database still has to be a Neon project, because the app connects with `@neondatabase/serverless`.
+Plaid, Gemini, and Stripe stay mocked when their keys are empty. The database must be a Neon project (pooled URL), because the app uses `@neondatabase/serverless`.
 
 ```bash
 npm install
 cp .env.example .env.local
 # Paste a Neon pooled DATABASE_URL and an AUTH_SECRET. Leave other keys empty.
-# Then apply db/migrations/*.sql in order (commands are in docs/local-setup.md).
+# Apply db/migrations/*.sql in order (see docs/local-setup.md).
 npm run seed
 npm run dev
 ```
@@ -27,21 +55,21 @@ npm run test:watch
 npm run e2e       # Playwright. Requires the migrated + seeded database
 ```
 
-End-to-end tests boot `next dev` themselves. They read `DATABASE_URL` from the environment (default `postgres://postgres:postgres@localhost:5432/spendsense`). Apply migrations and run `npm run seed` first.
+End-to-end tests boot `next dev` themselves. Export `DATABASE_URL` (Neon) before `npm run e2e`, or rely on CI’s pgvector service.
 
 ## Deploy
 
 1. Create a free Postgres database on [Neon](https://neon.tech).
 2. Enable pgvector: `CREATE EXTENSION IF NOT EXISTS vector;` (included in `db/migrations/001_init.sql`).
-3. Copy the **pooled** connection string into `DATABASE_URL`. The app uses `@neondatabase/serverless` `Pool`, which connects to Neon.
-4. Apply every file in `db/migrations/` with `psql`, in order.
-5. Run `npm run seed` once against that database. It creates the demo user and precomputes categories, embeddings, alerts, the forecast inputs, goals, and one or two monthly reports.
+3. Copy the **pooled** connection string into `DATABASE_URL`.
+4. Apply every file in `db/migrations/` in order.
+5. Run `npm run seed` once.
 6. Import the GitHub repo into [Vercel](https://vercel.com).
-7. Set env vars from `.env.example`. For a mock production demo, set only `DATABASE_URL`, `AUTH_SECRET`, and `AUTH_URL`.
-8. Set `NEXT_PUBLIC_APP_URL` to the Vercel URL (for example `https://spendsense.vercel.app`).
-9. Optional Stripe test mode: create a webhook endpoint `https://<app>/api/stripe/webhook` in the Stripe dashboard and set `STRIPE_WEBHOOK_SECRET` to that endpoint's signing secret.
+7. Set `DATABASE_URL`, `AUTH_SECRET`, `AUTH_URL`, and `NEXT_PUBLIC_APP_URL` (same public site URL).
+8. Leave Plaid, Gemini, and Stripe empty for a mock production demo.
+9. Optional Stripe test mode: webhook `https://<app>/api/stripe/webhook` and `STRIPE_WEBHOOK_SECRET`.
 
-Vercel Hobby functions time out around 10 seconds. Per-request handlers only embed one query or call one model. Categorization, embeddings, anomaly detection, goal math, and report generation run in `npm run seed`. No `vercel.json` override is required.
+Vercel Hobby functions time out around 10 seconds. Categorisation, embeddings, anomalies, goals, and reports are prepared in `npm run seed`. During a live demo, prefer the already-seeded bank link over clicking **Connect bank**.
 
 ## Commands
 
