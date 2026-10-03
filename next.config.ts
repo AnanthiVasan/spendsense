@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   serverExternalPackages: [
     "@neondatabase/serverless",
+    "pg",
     "ws",
     "bcryptjs",
     "plaid",
