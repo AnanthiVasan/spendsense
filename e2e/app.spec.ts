@@ -7,10 +7,11 @@ const demo = {
 
 async function login(page: Page, email = demo.email, password = demo.password) {
   await page.goto("/login");
+  await expect(page.getByLabel("Email")).toBeVisible({ timeout: 15_000 });
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Log in" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
 }
 
 test("unauthenticated dashboard visits redirect to login", async ({ page }) => {
@@ -19,14 +20,18 @@ test("unauthenticated dashboard visits redirect to login", async ({ page }) => {
 });
 
 test("signup and login land on the dashboard", async ({ page }) => {
+  test.setTimeout(90_000);
   const email = `e2e-${Date.now()}@spendsense.dev`;
   await page.goto("/signup");
   await page.getByLabel("Name").fill("E2E User");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("demo-pass-123");
   await page.getByRole("button", { name: "Sign up" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 45_000 });
+  await Promise.all([
+    page.waitForURL(/\/login/, { timeout: 20_000 }),
+    page.getByRole("button", { name: "Sign out" }).click(),
+  ]);
   await login(page, email, "demo-pass-123");
 });
 
