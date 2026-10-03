@@ -33,6 +33,109 @@ export function usableRetrievedRows(rows: RetrievedTransaction[]) {
   return rows.filter((row) => row.similarity >= threshold);
 }
 
+const MONTH_NAMES: Record<string, number> = {
+  january: 1,
+  jan: 1,
+  february: 2,
+  feb: 2,
+  march: 3,
+  mar: 3,
+  april: 4,
+  apr: 4,
+  may: 5,
+  june: 6,
+  jun: 6,
+  july: 7,
+  jul: 7,
+  august: 8,
+  aug: 8,
+  september: 9,
+  sep: 9,
+  sept: 9,
+  october: 10,
+  oct: 10,
+  november: 11,
+  nov: 11,
+  december: 12,
+  dec: 12,
+};
+
+export type MonthFilter =
+  | { kind: "absolute"; month: number; year?: number }
+  | { kind: "relative"; offset: 0 | -1 };
+
+/** Detect a calendar month in the question so we do not answer from other months. */
+export function parseMonthFilter(question: string): MonthFilter | null {
+  const text = question.toLowerCase();
+  if (/\b(this|current)\s+month\b/.test(text)) {
+    return { kind: "relative", offset: 0 };
+  }
+  if (/\b(last|previous|prev)\s+month\b/.test(text)) {
+    return { kind: "relative", offset: -1 };
+  }
+
+  const iso = text.match(/\b(20\d{2})-(\d{2})\b/);
+  if (iso) {
+    const year = Number(iso[1]);
+    const month = Number(iso[2]);
+    if (month >= 1 && month <= 12) {
+      return { kind: "absolute", month, year };
+    }
+  }
+
+  for (const [name, month] of Object.entries(MONTH_NAMES)) {
+    const named = text.match(new RegExp(`\\b${name}\\b(?:\\s+(20\\d{2}))?`));
+    if (named) {
+      const year = named[1] ? Number(named[1]) : undefined;
+      return { kind: "absolute", month, year };
+    }
+  }
+  return null;
+}
+
+export function resolveMonthKey(filter: MonthFilter, now = new Date()): string {
+  if (filter.kind === "relative") {
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + filter.offset, 1));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  }
+  const year = filter.year ?? now.getUTCFullYear();
+  return `${year}-${String(filter.month).padStart(2, "0")}`;
+}
+
+export function rowsInMonth(rows: RetrievedTransaction[], monthKey: string) {
+  return rows.filter((row) => row.occurredOn.slice(0, 7) === monthKey);
+}
+
+/**
+ * When the question names a month, keep only that month.
+ * If the year was omitted and no rows match the current year, try any year present in the set.
+ */
+export function applyMonthFilter(
+  rows: RetrievedTransaction[],
+  question: string,
+  now = new Date(),
+): RetrievedTransaction[] | "refuse" {
+  const filter = parseMonthFilter(question);
+  if (!filter) {
+    return rows;
+  }
+
+  const primaryKey = resolveMonthKey(filter, now);
+  const primary = rowsInMonth(rows, primaryKey);
+  if (primary.length > 0) {
+    return primary;
+  }
+
+  if (filter.kind === "absolute" && filter.year === undefined) {
+    const anyYear = rows.filter((row) => Number(row.occurredOn.slice(5, 7)) === filter.month);
+    if (anyYear.length > 0) {
+      return anyYear;
+    }
+  }
+
+  return "refuse";
+}
+
 type CategoryAgg = {
   category: string;
   sum: number;
@@ -132,9 +235,10 @@ export async function answerQuestion(userId: string, question: string): Promise<
   await enforceCopilotQuota(userId);
 
   const retrieved = await retrieveRelevantTransactions(userId, question, ragTopK());
-  const usable = usableRetrievedRows(retrieved);
+  const similar = usableRetrievedRows(retrieved);
+  const scoped = applyMonthFilter(similar, question);
 
-  if (usable.length === 0) {
+  if (scoped === "refuse" || scoped.length === 0) {
     return {
       answer: REFUSAL_MESSAGE,
       citations: [],
@@ -143,12 +247,12 @@ export async function answerQuestion(userId: string, question: string): Promise<
   }
 
   const answer = isGeminiConfigured()
-    ? await geminiAnswer(question, usable)
-    : mockAnswerFromRows(question, usable);
+    ? await geminiAnswer(question, scoped)
+    : mockAnswerFromRows(question, scoped);
 
   return {
     answer,
-    citations: toCitations(usable),
+    citations: toCitations(scoped),
     usedFallback: false,
   };
 }

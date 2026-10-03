@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyMonthFilter,
   mockAnswerFromRows,
+  parseMonthFilter,
   REFUSAL_MESSAGE,
+  resolveMonthKey,
   toCitations,
   usableRetrievedRows,
 } from "@/lib/copilot";
@@ -44,5 +47,25 @@ describe("copilot grounding", () => {
     expect(answer).toContain("EMI totaled");
     expect(toCitations(rows)).toHaveLength(3);
     expect(REFUSAL_MESSAGE).toContain("enough data");
+  });
+
+  it("parses month filters and refuses when that month is absent from retrieved rows", () => {
+    expect(parseMonthFilter("How much I spend on food on april month?")).toEqual({
+      kind: "absolute",
+      month: 4,
+      year: undefined,
+    });
+    expect(resolveMonthKey({ kind: "relative", offset: -1 }, new Date("2026-10-03T12:00:00Z"))).toBe(
+      "2026-09",
+    );
+
+    const foodRows = [
+      row({ id: "a", occurredOn: "2026-09-16", merchantName: "Chipotle" }),
+      row({ id: "b", occurredOn: "2026-08-12", merchantName: "Starbucks" }),
+    ];
+    expect(applyMonthFilter(foodRows, "How much I spend on food on april month?")).toBe("refuse");
+    expect(applyMonthFilter(foodRows, "How much did I spend on food last month?", new Date("2026-10-03T12:00:00Z"))).toEqual([
+      foodRows[0],
+    ]);
   });
 });
